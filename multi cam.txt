@@ -1,0 +1,243 @@
+package com.example.multicamera
+
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.util.Log
+import android.util.Size
+import android.view.MotionEvent
+import android.view.Surface
+import android.view.TextureView
+import android.view.ViewGroup
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import java.util.*
+import kotlin.math.abs
+import android.content.res.Configuration
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var cameraManager: CameraManager
+    private lateinit var textureViewFront: TextureView
+    private lateinit var textureViewBack: TextureView
+    private val cameraPermissionCode = 123
+    //    private var frontCameraTapCount = 0
+//    private var backCameraTapCount = 0
+    private var frontCameraFullScreen = false
+    private var backCameraFullScreen = false
+    @SuppressLint("MissingInflatedId", "ClickableViewAccessibility")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        textureViewFront = findViewById(R.id.textureViewFront)
+        textureViewBack = findViewById(R.id.textureViewBack)
+        checkCameraPermissions()
+        try {
+            val cameraIdList = cameraManager.cameraIdList
+            val rearCameraId = cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            }
+            val frontCameraId = cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+            }
+            if (rearCameraId != null && frontCameraId != null) {
+                openCamera(frontCameraId, textureViewFront)
+                openCamera(rearCameraId, textureViewBack)
+            } else {
+                Log.e("CameraError", "Front or Rear camera not found.")
+            }
+        } catch (e: CameraAccessException) {
+            Log.e("CameraError", "Error accessing camera: ${e.message}")
+        }
+        textureViewFront.setOnTouchListener { _, event ->
+            handleCameraViewClick(event, textureViewFront)
+            true
+        }
+        textureViewBack.setOnTouchListener { _, event ->
+            handleCameraViewClick(event, textureViewBack)
+            true
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Check if it's a landscape or portrait change
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            // Landscape mode
+            // Adjust layout or perform operations for landscape changes
+        } else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) {
+            // Portrait mode
+            // Adjust layout or perform operations for portrait changes
+        }
+    }
+    private fun openCamera(cameraId: String, textureView: TextureView) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                    override fun onOpened(camera: CameraDevice) {
+                        configureCamera(camera, textureView)
+                    }
+                    override fun onDisconnected(camera: CameraDevice) {
+                        camera.close()
+                    }
+                    override fun onError(camera: CameraDevice, error: Int) {
+                        camera.close()
+                        Log.e("CameraError", "Error opening camera: $error")
+                    }
+                }, null)
+            } catch (e: CameraAccessException) {
+                Log.e("CameraError", "Error opening camera: ${e.message}")
+            }
+        }
+    }
+    private fun configureCamera(camera: CameraDevice, textureView: TextureView) {
+        val surfaceTexture = textureView.surfaceTexture
+        val previewSize = chooseOptimalSize(camera.id, textureView.width, textureView.height)
+        surfaceTexture?.setDefaultBufferSize(previewSize.width, previewSize.height)
+        val surface = Surface(surfaceTexture)
+        val captureRequestBuilder =
+            camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                addTarget(surface)
+            }
+        camera.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
+            override fun onConfigured(session: CameraCaptureSession) {
+                session.setRepeatingRequest(captureRequestBuilder.build(), null, null)
+            }
+            override fun onConfigureFailed(session: CameraCaptureSession) {
+                Log.e("CameraError", "Failed to configure camera session.")
+            }
+        }, null)
+    }
+//    private fun toggleFullScreenMode(textureView: TextureView) {
+//        val layoutParams = textureView.layoutParams
+//        if (layoutParams.height == 0) {
+//            // Switch to full-screen mode
+//            layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+//            textureView.layoutParams = layoutParams
+//        } else {
+//            // Switch to dual-camera view
+//            layoutParams.height = 0
+//            textureView.layoutParams = layoutParams
+//        }
+//    }
+
+//
+
+
+    private fun handleCameraViewClick(event: MotionEvent, textureView: TextureView) {
+        if (event.action == MotionEvent.ACTION_UP) {
+            when (textureView) {
+                textureViewFront -> toggleFullScreenMode(textureViewFront)
+                textureViewBack -> toggleFullScreenMode(textureViewBack)
+            }
+        }
+    }
+
+    private fun toggleFullScreenMode(textureView: TextureView) {
+        val layoutParams = textureView.layoutParams
+        val parent = textureView.parent as ViewGroup
+        val parentWidth = parent.width
+        val parentHeight = parent.height
+        val initialWidth = textureView.width
+        val initialHeight = textureView.height
+        val newHeight: Int
+        val newWidth: Int
+
+        if (layoutParams.height == ViewGroup.LayoutParams.MATCH_PARENT) {
+            // Switch to dual-camera view
+            newHeight = initialHeight * parentWidth / initialWidth
+            layoutParams.height = newHeight
+            layoutParams.width = parentWidth
+        } else {
+            // Switch to full-screen mode
+            newWidth = initialWidth * parentHeight / initialHeight
+            layoutParams.width = newWidth
+            layoutParams.height = parentHeight
+        }
+        textureView.layoutParams = layoutParams
+    }
+
+
+
+    private fun chooseOptimalSize(cameraId: String, width: Int, height: Int): Size {
+        try {
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val streamConfigurationMap =
+                characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                    ?: throw RuntimeException("Cannot get available preview sizes")
+            val sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture::class.java)
+            // Choose an optimal size based on your requirements.
+            // For simplicity, you can choose the size with the closest aspect ratio to the given width and height.
+            val targetRatio = width.toDouble() / height
+            var optimalSize: Size? = null
+            var minDiff = Double.MAX_VALUE
+            for (size in sizes) {
+                val ratio = size.width.toDouble() / size.height
+                val diff = abs(ratio - targetRatio)
+                if (diff < minDiff) {
+                    optimalSize = size
+                    minDiff = diff
+                }
+            }
+            return optimalSize ?: throw RuntimeException("Cannot find a suitable preview size")
+        } catch (e: CameraAccessException) {
+            throw RuntimeException("Error getting camera characteristics: ${e.message}")
+        }
+    }
+    private fun checkCameraPermissions() {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                cameraPermissionCode
+            )
+        }
+    }
+//    private fun handleCameraViewClick(event: MotionEvent, textureView: TextureView) {
+//        if (event.action == MotionEvent.ACTION_UP) {
+//            if (textureView == textureViewFront) {
+//                frontCameraFullScreen = !frontCameraFullScreen
+//                toggleFullScreenMode(textureViewFront)
+//            } else if (textureView == textureViewBack) {
+//                backCameraFullScreen = !backCameraFullScreen
+//                toggleFullScreenMode(textureViewBack)
+//            }
+//        }
+//    }
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == cameraPermissionCode) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, proceed with camera initialization
+                // For simplicity, you can recreate the activity to initialize cameras
+                recreate()
+            } else {
+                // Permission denied, handle accordingly
+                Log.e("PermissionError", "Camera permission denied.")
+            }
+        }
+    }
+}

@@ -1,0 +1,18 @@
+The MainActivity class extends AppCompatActivity and initializes properties for a button (btnCapturePicture), CameraManager, and two TextureViews for the front and rear cameras. It also sets a camera permission code.
+
+
+Sets the content view to the layout defined in activity_main.
+Initializes btnCapturePicture and sets a click listener to call capturePicture() when clicked.
+Gets the CameraManager system service and initializes the two TextureViews.
+Checks camera permissions and attempts to open both front and rear cameras, if available.
+I'll continue with the next part in the following message to avoid exceeding the message length limit!
+
+
+
+Functions: openCamera & configureCamera
+openCamera: Checks camera permissions, then attempts to open the camera specified by ID. Upon successful opening, it calls configureCamera to set up the camera for preview.
+configureCamera: Configures the opened camera with the specified TextureView for preview. It sets up a Surface for displaying the preview frames and creates a capture request builder and session to start the camera preview.
+These functions work together to open the camera and configure it for preview display.
+
+Other Functions
+The remaining functions (chooseOptimalSize, checkCameraPermissions, onRequestPermissionsResult, and capturePicture) handle various tasks such as choosing the optimal preview size, checking and requesting camera permissions, handling permission results, and handling picture capture logic (currently displaying a toast message).
